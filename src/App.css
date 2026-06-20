@@ -285,6 +285,12 @@ input  { font-family: var(--f-ui); }
 .tag-red {
   background: var(--red-lt); color: #991b1b; border: 1px solid var(--red-md);
 }
+.tag-blue {
+  background: var(--blue-lt); color: var(--blue); border: 1px solid #bfdbfe;
+}
+.tag-purple {
+  background: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff;
+}
 
 /* ── Flow Table ─────────────────────────────────────────── */
 .flow-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -465,3 +471,154 @@ input  { font-family: var(--f-ui); }
   .tab-label { display: none; }
   .bm-bar, .bm-label, .bm-pct { display: none; }
 }
+
+/* ============================================================
+   🤖 RL Debug Panel Styles
+   ============================================================ */
+.rl-debug-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: var(--sp-4) 0;
+}
+
+.rl-debug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.rl-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.rl-card-title {
+  font-family: var(--f-ui);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rl-controls-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rl-btn {
+  padding: 8px 14px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+}
+
+.rl-btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.rl-btn-primary:hover {
+  background: #1e40af;
+}
+
+.rl-btn-secondary {
+  background: var(--surface2);
+  border-color: var(--border);
+  color: var(--text2);
+}
+.rl-btn-secondary:hover {
+  background: var(--surface3);
+  color: var(--text);
+}
+
+.rl-btn-danger {
+  background: var(--red-lt);
+  border-color: var(--red-md);
+  color: var(--red);
+}
+.rl-btn-danger:hover {
+  background: #fecaca;
+}
+
+.rl-sliders-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.rl-slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rl-slider-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  display: flex;
+  justify-content: space-between;
+}
+
+.rl-slider-value {
+  font-family: var(--f-mono);
+  color: var(--accent);
+}
+
+.rl-slider {
+  width: 100%;
+  accent-color: var(--accent);
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  outline: none;
+}
+
+.rl-bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rl-bar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rl-bar-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--f-ui);
+}
+
+.rl-bar-outer {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  height: 12px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  position: relative;
+}
+
+.rl-bar-inner {
+  height: 100%;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+

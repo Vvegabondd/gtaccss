@@ -32,24 +32,32 @@ function buildScenarioFlows(baseFlows, scenarioKey) {
       return safeBase.map((f, i) => ({
         ...f,
         strategy: i % 2 === 0 ? 'conservative' : 'adaptive',
+        trafficProfile: 'conservative',
         rate: Math.max(8, Math.round((f.rate || 25) * 0.45)),
       }));
     case 'heavy_congestion':
-      return safeBase.map(f => ({ ...f, strategy: 'aggressive', rate: Math.max(55, Math.round((f.rate || 40) * 1.55)) }));
+      return safeBase.map(f => ({ ...f, strategy: 'aggressive', trafficProfile: 'aggressive', rate: Math.max(55, Math.round((f.rate || 40) * 1.55)) }));
     case 'burst_traffic':
       return safeBase.map((f, i) => ({
         ...f,
         strategy: i % 2 === 0 ? 'aggressive' : 'aimd',
+        trafficProfile: 'burstTraffic',
         rate: Math.max(35, Math.round((f.rate || 35) * (i % 2 === 0 ? 1.45 : 1.15))),
       }));
     case 'fairness_critical':
-      return safeBase.map(f => ({ ...f, strategy: 'adaptive', rate: Math.max(25, Math.round((f.rate || 30) * 0.9)) }));
+      return safeBase.map(f => ({ ...f, strategy: 'adaptive', trafficProfile: 'adaptive', rate: Math.max(25, Math.round((f.rate || 30) * 0.9)) }));
     case 'adaptive_env':
-      return safeBase.map((f, i) => ({ ...f, strategy: i % 2 === 0 ? 'adaptive' : 'aimd', rate: Math.max(28, Math.round((f.rate || 32) * 1.0)) }));
+      return safeBase.map((f, i) => ({ ...f, strategy: i % 2 === 0 ? 'adaptive' : 'aimd', trafficProfile: 'adaptive', rate: Math.max(28, Math.round((f.rate || 32) * 1.0)) }));
     case 'mixed':
     default: {
       const cycle = ['aggressive', 'adaptive', 'conservative', 'aimd'];
-      return safeBase.map((f, i) => ({ ...f, strategy: cycle[i % cycle.length], rate: Math.max(30, Math.round(f.rate || 35)) }));
+      const profileCycle = ['aggressive', 'adaptive', 'conservative', 'video'];
+      return safeBase.map((f, i) => ({
+        ...f,
+        strategy: cycle[i % cycle.length],
+        trafficProfile: profileCycle[i % profileCycle.length],
+        rate: Math.max(30, Math.round(f.rate || 35))
+      }));
     }
   }
 }

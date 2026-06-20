@@ -2,18 +2,18 @@ import React, { useEffect, useRef } from 'react';
 import { NODE_POSITIONS } from '../simulation/engine';
 
 function linkColor(util) {
-  if (util > 0.9) return '#ef4444';
+  if (util > 1.0) return '#ef4444';
   if (util > 0.7) return '#f59e0b';
   return '#22c55e';
 }
 
 function linkWidth(util) {
-  if (util > 0.9) return 4;
+  if (util > 1.0) return 4;
   if (util > 0.7) return 3;
   return 2;
 }
 
-export default function NetworkTopology({ flows, linkUtil = {}, congestedNodes = new Set(), topology = null, links = null }) {
+export default function NetworkTopology({ flows, linkUtil = {}, congestedNodes = new Set(), topology = null, links = null, nodeQueueStats = {} }) {
   const animRef = useRef([]);
   // Build flow color map for animating packets
   const flowColors = {};
@@ -121,7 +121,7 @@ export default function NetworkTopology({ flows, linkUtil = {}, congestedNodes =
         const util = linkUtil[key] || 0;
         const isBottleneck = key === 'D-E';
         const color = isBottleneck && util > 0.5 ? '#ef4444' : linkColor(util);
-        const mId = util > 0.9 ? 'arrow-red' : util > 0.7 ? 'arrow-amber' : 'arrow-green';
+        const mId = util > 1.0 ? 'arrow-red' : util > 0.7 ? 'arrow-amber' : 'arrow-green';
 
         // Offset to not overlap node circle
         const dx = to.x - from.x, dy = to.y - from.y;
@@ -133,7 +133,7 @@ export default function NetworkTopology({ flows, linkUtil = {}, congestedNodes =
         return (
           <g key={key}>
             {/* Shadow for congested */}
-            {util > 0.85 && (
+            {util > 1.0 && (
               <line x1={x1} y1={y1} x2={x2} y2={y2}
                 stroke="#ef4444" strokeWidth="8" opacity="0.15"
                 strokeLinecap="round"/>
@@ -159,11 +159,27 @@ export default function NetworkTopology({ flows, linkUtil = {}, congestedNodes =
             >
               {link.capacity}
             </text>
+            {/* Utilization percentage label */}
+            {util > 0 && (
+              <text
+                x={(from.x + to.x)/2}
+                y={(from.y + to.y)/2 + (from.y === to.y ? 8 : 10)}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill={util > 1.0 ? '#ef4444' : util > 0.7 ? '#f59e0b' : '#22c55e'}
+                fontSize="9"
+                fontFamily="JetBrains Mono, monospace"
+                fontWeight="700"
+                dy={from.y !== to.y ? 12 : 8}
+              >
+                {Math.round(util * 100)}%{util > 1.0 ? '🔴' : ''}
+              </text>
+            )}
             {/* Bottleneck label */}
             {isBottleneck && (
-              <text x={(from.x+to.x)/2} y={(from.y+to.y)/2 + 16}
-                textAnchor="middle" fill="#ef4444" fontSize="9"
-                fontFamily="Space Grotesk, sans-serif" fontWeight="600">
+              <text x={(from.x+to.x)/2} y={(from.y+to.y)/2 + 24}
+                textAnchor="middle" fill="#ef4444" fontSize="8"
+                fontFamily="Space Grotesk, sans-serif" fontWeight="700">
                 BOTTLENECK
               </text>
             )}
@@ -191,14 +207,37 @@ export default function NetworkTopology({ flows, linkUtil = {}, congestedNodes =
       {Object.entries(positions).map(([node, pos]) => {
         const isCongested = congestedNodes.has(node);
         const isBottleneckNode = node === 'D' || node === 'E';
-        const fill = isCongested ? '#fef2f2' : isBottleneckNode ? '#fff7ed' : '#eff6ff';
-        const stroke = isCongested ? '#ef4444' : isBottleneckNode ? '#f59e0b' : '#2563eb';
-        const strokeW = isCongested ? 2.5 : 2;
+        const q = nodeQueueStats[node];
+        const qPct = q ? q.queueUtilization * 100 : 0;
+        const qCritical = qPct > 80;
+        const qWarning = qPct > 50;
+
+        // Queue-aware fill: queue pressure overrides congestion color when higher
+        const fill = qCritical ? '#fef2f2' : qWarning ? '#fffbeb' : isCongested ? '#fef2f2' : isBottleneckNode ? '#fff7ed' : '#eff6ff';
+        const stroke = qCritical ? '#ef4444' : qWarning ? '#f59e0b' : isCongested ? '#ef4444' : isBottleneckNode ? '#f59e0b' : '#2563eb';
+        const strokeW = (qCritical || isCongested) ? 2.5 : 2;
+        const labelColor = qCritical ? '#dc2626' : qWarning ? '#92400e' : isCongested ? '#dc2626' : isBottleneckNode ? '#92400e' : '#1e3a8a';
 
         return (
           <g key={node}>
-            {/* Congestion pulse ring */}
-            {isCongested && (
+            {/* Queue-critical pulse ring */}
+            {qCritical && (
+              <circle cx={pos.x} cy={pos.y} r="22" fill="none" stroke="#ef4444"
+                strokeWidth="2" opacity="0.6">
+                <animate attributeName="r" values="22;30;22" dur="1.2s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.7;0;0.7" dur="1.2s" repeatCount="indefinite"/>
+              </circle>
+            )}
+            {/* Warning ring (slower pulse) */}
+            {qWarning && !qCritical && (
+              <circle cx={pos.x} cy={pos.y} r="21" fill="none" stroke="#f59e0b"
+                strokeWidth="1.5" opacity="0.5">
+                <animate attributeName="r" values="21;26;21" dur="2s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.5;0;0.5" dur="2s" repeatCount="indefinite"/>
+              </circle>
+            )}
+            {/* Congestion pulse ring (when no queue warning overrides) */}
+            {isCongested && !qWarning && (
               <circle cx={pos.x} cy={pos.y} r="22" fill="none" stroke="#ef4444"
                 strokeWidth="2" opacity="0.6">
                 <animate attributeName="r" values="22;30;22" dur="1.2s" repeatCount="indefinite"/>
@@ -206,17 +245,40 @@ export default function NetworkTopology({ flows, linkUtil = {}, congestedNodes =
               </circle>
             )}
             {/* Node circle */}
-            <circle cx={pos.x} cy={pos.y} r="19"
+            <circle cx={pos.x} cy={pos.y} r="20"
               fill={fill}
               stroke={stroke}
               strokeWidth={strokeW}
-              filter={isCongested ? 'url(#congestionGlow)' : undefined}
+              filter={(qCritical || isCongested) ? 'url(#congestionGlow)' : undefined}
             />
-            <text x={pos.x} y={pos.y} textAnchor="middle" dominantBaseline="middle"
-              fill={isCongested ? '#dc2626' : isBottleneckNode ? '#92400e' : '#1e3a8a'}
-              fontSize="13" fontFamily="JetBrains Mono, monospace" fontWeight="700">
+            <text x={pos.x} y={pos.y - 5} textAnchor="middle" dominantBaseline="middle"
+              fill={labelColor}
+              fontSize="12" fontFamily="JetBrains Mono, monospace" fontWeight="700">
               {node}
             </text>
+            {/* Queue utilization % label */}
+            {q && (
+              <text x={pos.x} y={pos.y + 5} textAnchor="middle" dominantBaseline="middle"
+                fill={qCritical ? '#ef4444' : qWarning ? '#d97706' : '#64748b'}
+                fontSize="6.5" fontFamily="JetBrains Mono, monospace" fontWeight="700">
+                Q:{qPct.toFixed(0)}%
+              </text>
+            )}
+            {/* Latency label */}
+            {q && (
+              <text x={pos.x} y={pos.y + 14} textAnchor="middle" dominantBaseline="middle"
+                fill={(q.latency || 0) > 50 ? '#ef4444' : (q.latency || 0) > 20 ? '#d97706' : '#64748b'}
+                fontSize="6.5" fontFamily="JetBrains Mono, monospace" fontWeight="700">
+                L:{(q.latency || 0).toFixed(0)}ms
+              </text>
+            )}
+            {/* Loss rate label outside circle */}
+            {q && q.packetLossRate > 0 && (
+              <text x={pos.x} y={pos.y + 28} textAnchor="middle" dominantBaseline="middle"
+                fill="#ef4444" fontSize="6.5" fontFamily="JetBrains Mono, monospace" fontWeight="700">
+                ⚠ Loss:{((q.packetLossRate || 0) * 100).toFixed(1)}%
+              </text>
+            )}
           </g>
         );
       })}
@@ -238,6 +300,16 @@ export default function NetworkTopology({ flows, linkUtil = {}, congestedNodes =
           <circle cx="6" cy="2" r="5" fill="#fef2f2" stroke="#ef4444" strokeWidth="1.5"/>
           <text x="16" y="4" fill="#64748b" fontSize="9" fontFamily="Space Grotesk, sans-serif"
             dominantBaseline="middle">Congested node</text>
+        </g>
+        <g transform="translate(460, 0)">
+          <circle cx="6" cy="2" r="5" fill="#fffbeb" stroke="#f59e0b" strokeWidth="1.5"/>
+          <text x="16" y="4" fill="#64748b" fontSize="9" fontFamily="Space Grotesk, sans-serif"
+            dominantBaseline="middle">Queue ≥50%</text>
+        </g>
+        <g transform="translate(550, 0)">
+          <circle cx="6" cy="2" r="5" fill="#fef2f2" stroke="#ef4444" strokeWidth="1.5"/>
+          <text x="16" y="4" fill="#64748b" fontSize="9" fontFamily="Space Grotesk, sans-serif"
+            dominantBaseline="middle">Queue ≥80% 🔴</text>
         </g>
       </g>
     </svg>

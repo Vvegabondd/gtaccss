@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { STRATEGY_META, NODES, DEFAULT_FLOWS } from '../simulation/engine';
+import { STRATEGY_META, NODES, DEFAULT_FLOWS, TRAFFIC_PROFILES } from '../simulation/engine';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip,
@@ -36,7 +36,9 @@ export default function FlowsTab({ flows, onUpdateFlows, running }) {
       id,
       path: ['A', 'B', 'D', 'E', 'F'],
       strategy: 'adaptive',
+      trafficProfile: 'conservative',
       rate: 30,
+      baseRate: 30,
       color: FLOW_COLORS[flows.length % FLOW_COLORS.length],
       throughput: 0, delay: 0, lossRate: 0, payoff: 0,
     };
@@ -48,7 +50,7 @@ export default function FlowsTab({ flows, onUpdateFlows, running }) {
   }
 
   function resetFlows() {
-    onUpdateFlows(DEFAULT_FLOWS.map(f => ({ ...f, throughput: 0, delay: 0, lossRate: 0, payoff: 0 })));
+    onUpdateFlows(DEFAULT_FLOWS.map(f => ({ ...f, baseRate: f.rate || 40, throughput: 0, delay: 0, lossRate: 0, payoff: 0 })));
   }
 
   const chartFlows = (flows || []).map((f, idx) => ({
@@ -137,6 +139,11 @@ export default function FlowsTab({ flows, onUpdateFlows, running }) {
                 }}>
                   {meta.icon} {meta.label}
                 </span>
+                <span className="strategy-badge" style={{
+                  background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', marginLeft: 8
+                }}>
+                  📦 {TRAFFIC_PROFILES[flow.trafficProfile]?.label || flow.trafficProfile || 'Conservative'}
+                </span>
                 <span style={{ flex: 1 }}/>
                 {!isEditing && (
                   <>
@@ -159,7 +166,7 @@ export default function FlowsTab({ flows, onUpdateFlows, running }) {
               </div>
 
               {isEditing ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {/* Strategy selector */}
                   <div>
                     <div className="section-title">Strategy</div>
@@ -178,11 +185,48 @@ export default function FlowsTab({ flows, onUpdateFlows, running }) {
                     </div>
                   </div>
 
-                  {/* Initial rate */}
+                  {/* Traffic Profile */}
                   <div>
-                    <div className="section-title">Initial Rate: <span style={{ fontFamily: 'JetBrains Mono', color: '#1d4ed8' }}>{draft.rate} Mbps</span></div>
-                    <input type="range" min="5" max="100" value={draft.rate}
-                      onChange={e => setDraft(d => ({ ...d, rate: Number(e.target.value) }))}
+                    <div className="section-title">Traffic Profile</div>
+                    <select
+                      value={draft.trafficProfile || 'conservative'}
+                      onChange={e => {
+                        const selectedProfile = e.target.value;
+                        const defaultBase = TRAFFIC_PROFILES[selectedProfile]?.baseRateDefault || 40;
+                        setDraft(d => ({ 
+                          ...d, 
+                          trafficProfile: selectedProfile,
+                          baseRate: defaultBase,
+                          rate: defaultBase
+                        }));
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        border: '1.5px solid #dde3f0',
+                        fontSize: 13,
+                        fontFamily: 'Space Grotesk',
+                        outline: 'none',
+                        background: '#fff'
+                      }}
+                    >
+                      {Object.entries(TRAFFIC_PROFILES).map(([key, p]) => (
+                        <option key={key} value={key}>
+                          {p.label} (Default: {p.baseRateDefault} Mbps)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Base rate */}
+                  <div>
+                    <div className="section-title">Base Rate: <span style={{ fontFamily: 'JetBrains Mono', color: '#1d4ed8' }}>{draft.baseRate !== undefined ? draft.baseRate : draft.rate} Mbps</span></div>
+                    <input type="range" min="5" max="100" value={draft.baseRate !== undefined ? draft.baseRate : draft.rate}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        setDraft(d => ({ ...d, baseRate: val, rate: val }));
+                      }}
                       style={{ width: '100%', accentColor: '#2563eb' }}/>
                   </div>
 
@@ -197,12 +241,12 @@ export default function FlowsTab({ flows, onUpdateFlows, running }) {
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 4 }}>
                   {[
-                    { label: 'Rate', val: `${(flow.rate||0).toFixed(1)} Mbps` },
+                    { label: 'Base Rate', val: `${(flow.baseRate || flow.rate || 0).toFixed(1)} Mbps` },
+                    { label: 'Live Rate', val: `${(flow.rate || 0).toFixed(1)} Mbps` },
                     { label: 'Throughput', val: `${(flow.throughput||0).toFixed(1)} Mbps` },
                     { label: 'Delay', val: `${(flow.delay||0).toFixed(1)} ms` },
                     { label: 'Packet Loss', val: `${((flow.lossRate||0)*100).toFixed(1)}%` },
                     { label: 'Payoff', val: (flow.payoff||0).toFixed(2) },
-                    { label: 'Path Hops', val: flow.path.length - 1 },
                   ].map(({ label, val }) => (
                     <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: 10, color: '#8892b0', fontFamily: 'Space Grotesk',
