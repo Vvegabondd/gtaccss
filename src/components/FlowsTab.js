@@ -49,6 +49,39 @@ export default function FlowsTab({ flows, onUpdateFlows, running }) {
     onUpdateFlows(flows.filter((_, i) => i !== idx));
   }
 
+  function randomizeStrategies() {
+    const strategies = ['aggressive', 'aimd', 'adaptive', 'conservative'];
+    const profiles = ['aggressive', 'adaptive', 'conservative', 'video', 'gaming', 'fileTransfer', 'burstTraffic'];
+    
+    const next = flows.map(f => {
+      const strategy = strategies[Math.floor(Math.random() * strategies.length)];
+      let trafficProfile = profiles[Math.floor(Math.random() * profiles.length)];
+      
+      if (strategy === 'aggressive') {
+        trafficProfile = ['aggressive', 'burstTraffic', 'fileTransfer'][Math.floor(Math.random() * 3)];
+      } else if (strategy === 'conservative') {
+        trafficProfile = ['conservative', 'gaming'][Math.floor(Math.random() * 2)];
+      } else {
+        trafficProfile = ['adaptive', 'video', 'gaming'][Math.floor(Math.random() * 3)];
+      }
+
+      const defaultRate = TRAFFIC_PROFILES[trafficProfile]?.baseRateDefault || 40;
+
+      return {
+        ...f,
+        strategy,
+        trafficProfile,
+        baseRate: defaultRate,
+        rate: defaultRate,
+        throughput: 0,
+        delay: 0,
+        lossRate: 0,
+        payoff: 0,
+      };
+    });
+    onUpdateFlows(next);
+  }
+
   function resetFlows() {
     onUpdateFlows(DEFAULT_FLOWS.map(f => ({ ...f, baseRate: f.rate || 40, throughput: 0, delay: 0, lossRate: 0, payoff: 0 })));
   }
@@ -106,6 +139,10 @@ export default function FlowsTab({ flows, onUpdateFlows, running }) {
         <h2 style={{ fontFamily: 'Sora', fontSize: 18, fontWeight: 700, color: '#1a2340', flex: 1 }}>
           Flow Configuration — Players & Strategies
         </h2>
+        <button className="ctrl-btn ghost" style={{ background: '#fff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}
+          onClick={randomizeStrategies} disabled={running}>
+          🎲 Randomize Strategies
+        </button>
         <button className="ctrl-btn ghost" style={{ background: '#fff', color: '#4a5578', border: '1px solid #dde3f0' }}
           onClick={resetFlows} disabled={running}>
           ↺ Reset Default

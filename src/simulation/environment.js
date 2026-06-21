@@ -100,33 +100,15 @@ export class GTACCSEnvironment {
 
   getReward(stateMetrics = null) {
     let fairness = 0;
-    let throughput = 0;
-    let avgPacketLoss = 0;
-    let avgLatency = 0;
 
     if (stateMetrics) {
       fairness = stateMetrics.fairness;
-      throughput = stateMetrics.throughput;
-      avgPacketLoss = stateMetrics.avgPacketLoss;
-      avgLatency = stateMetrics.avgLatency;
     } else {
       const state = this.getState();
-      avgLatency = state[1];
-      avgPacketLoss = state[2];
       fairness = state[4];
-      throughput = state[5];
     }
 
-    const bottleneckCap = Math.min(...this.links.map(l => l.capacity));
-    const throughputNormalized = Math.min(1.5, throughput / Math.max(1, bottleneckCap));
-    const reliability = 1 - avgPacketLoss;
-    const latencyNormalized = avgLatency / 100.0;
-
-    const reward = (0.3 * fairness)
-      + (0.3 * throughputNormalized)
-      + (0.2 * reliability)
-      - (0.1 * latencyNormalized)
-      - (0.1 * avgPacketLoss);
+    const reward = fairness - 0.5;
 
     return parseFloat(reward.toFixed(4));
   }

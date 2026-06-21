@@ -55,6 +55,37 @@ const DEFAULT_TOPOLOGY = {
   ],
 };
 
+function randomizeFlowStrategies(flowsList) {
+  const strategies = ['aggressive', 'aimd', 'adaptive', 'conservative'];
+  const profiles = ['aggressive', 'adaptive', 'conservative', 'video', 'gaming', 'fileTransfer', 'burstTraffic'];
+  
+  return flowsList.map(f => {
+    const strategy = strategies[Math.floor(Math.random() * strategies.length)];
+    let trafficProfile = profiles[Math.floor(Math.random() * profiles.length)];
+    
+    if (strategy === 'aggressive') {
+      trafficProfile = ['aggressive', 'burstTraffic', 'fileTransfer'][Math.floor(Math.random() * 3)];
+    } else if (strategy === 'conservative') {
+      trafficProfile = ['conservative', 'gaming'][Math.floor(Math.random() * 2)];
+    } else {
+      trafficProfile = ['adaptive', 'video', 'gaming'][Math.floor(Math.random() * 3)];
+    }
+
+    return {
+      ...f,
+      strategy,
+      trafficProfile,
+      rate: 40,
+      baseRate: 40,
+    };
+  });
+}
+
+const INITIAL_TOPOLOGY = {
+  ...DEFAULT_TOPOLOGY,
+  flows: randomizeFlowStrategies(DEFAULT_TOPOLOGY.flows),
+};
+
 export default function App() {
   const [tab, setTab] = useState('topology');
 
@@ -73,11 +104,11 @@ export default function App() {
   // ── A3C Agent Ref (Shared between Debug and Evaluation tabs) ──
   const a3cAgentRef = useRef(null);
   if (!a3cAgentRef.current) {
-    a3cAgentRef.current = new A3CAgent({ topology: DEFAULT_TOPOLOGY });
+    a3cAgentRef.current = new A3CAgent({ topology: INITIAL_TOPOLOGY });
   }
 
   // ── Topology state (source of truth from TopologyBuilder) ──
-  const [topology, setTopology] = useState(DEFAULT_TOPOLOGY);
+  const [topology, setTopology] = useState(INITIAL_TOPOLOGY);
 
   // Synchronize A3C workers topology
   useEffect(() => {
@@ -96,17 +127,17 @@ export default function App() {
   const [equilibriumRound, setEquilibriumRound] = useState(null);
 
   const [flows, setFlows] = useState(() => {
-    const init = initSimulation(DEFAULT_TOPOLOGY.flows, DEFAULT_TOPOLOGY.nodes, DEFAULT_TOPOLOGY.links);
+    const init = initSimulation(INITIAL_TOPOLOGY.flows, INITIAL_TOPOLOGY.nodes, INITIAL_TOPOLOGY.links);
     return init.flows;
   });
   const [payoffHistories, setPayoffHistories] = useState(() => {
-    const init = initSimulation(DEFAULT_TOPOLOGY.flows, DEFAULT_TOPOLOGY.nodes, DEFAULT_TOPOLOGY.links);
+    const init = initSimulation(INITIAL_TOPOLOGY.flows, INITIAL_TOPOLOGY.nodes, INITIAL_TOPOLOGY.links);
     return init.payoffHistories;
   });
   const [linkUtil, setLinkUtil] = useState({});
   const [linkLoss, setLinkLoss] = useState({});
   const [linkDemand, setLinkDemand] = useState({});
-  const [simLinks, setSimLinks] = useState(() => DEFAULT_TOPOLOGY.links.map(l => ({
+  const [simLinks, setSimLinks] = useState(() => INITIAL_TOPOLOGY.links.map(l => ({
     ...l,
     stats: { capacity: l.capacity, currentLoad: 0, utilization: 0, congested: false }
   })));

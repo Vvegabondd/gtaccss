@@ -160,16 +160,8 @@ export function runNashEvaluation(topology, scenarioKey, rounds = 100) {
     const fairness = result.fairness;
     const throughput = result.totalThroughput;
 
-    const bottleneckCap = Math.min(...links.map(l => l.capacity));
-    const throughputNormalized = Math.min(1.5, throughput / Math.max(1, bottleneckCap));
     const reliability = 1 - avgPacketLoss;
-    const latencyNormalized = avgLatency / 100.0;
-
-    const reward = (0.3 * fairness)
-      + (0.3 * throughputNormalized)
-      + (0.2 * reliability)
-      - (0.1 * latencyNormalized)
-      - (0.1 * avgPacketLoss);
+    const reward = fairness - 0.5;
 
     stepsData.push({
       round: r,
