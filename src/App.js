@@ -6,6 +6,11 @@ import FlowsTab from './components/FlowsTab';
 import PayoffTab from './components/PayoffTab';
 import ComparisonTab from './components/ComparisonTab';
 import AnalyticsTab from './components/AnalyticsTab';
+import RLDebugTab from './components/RLDebugTab';
+import RLEvaluationTab from './components/RLEvaluationTab';
+import { A2CAgent } from './rl/A2CAgent';
+import { DDQNAgent } from './rl/DDQNAgent';
+import { A3CAgent } from './rl/A3CAgent';
 import { simulationStep, initSimulation, DEFAULT_FLOWS } from './simulation/engine';
 
 const SPEED_MAP = { '0.5x': 2000, '1x': 1000, '2x': 500, '5x': 200, '10x': 100 };
@@ -17,6 +22,8 @@ const TABS = [
   { id: 'flows', label: '🔀 Flows' },
   { id: 'payoff', label: '💰 Payoff' },
   { id: 'comparison', label: '⚔️ Compare' },
+  { id: 'rl_debug', label: '🤖 RL Debug' },
+  { id: 'rl_eval', label: '📊 RL Evaluation' },
 ];
 
 // Default topology mirrors the builder's defaults
@@ -42,17 +49,73 @@ const DEFAULT_TOPOLOGY = {
     { from: 'F', to: 'H', capacity: 80 },
   ],
   flows: [
-    { id: 'F1', path: ['A', 'B', 'D', 'E', 'F', 'G'], strategy: 'aggressive', rate: 40, color: '#ef4444' },
-    { id: 'F2', path: ['A', 'C', 'D', 'E', 'F', 'H'], strategy: 'adaptive', rate: 40, color: '#3b82f6' },
-    { id: 'F3', path: ['B', 'D', 'E', 'F'], strategy: 'conservative', rate: 40, color: '#22c55e' },
+    { id: 'F1', path: ['A', 'B', 'D', 'E', 'F', 'G'], strategy: 'aggressive', trafficProfile: 'aggressive', rate: 40, color: '#ef4444' },
+    { id: 'F2', path: ['A', 'C', 'D', 'E', 'F', 'H'], strategy: 'adaptive', trafficProfile: 'adaptive', rate: 40, color: '#3b82f6' },
+    { id: 'F3', path: ['B', 'D', 'E', 'F'], strategy: 'conservative', trafficProfile: 'conservative', rate: 40, color: '#22c55e' },
   ],
+};
+
+function randomizeFlowStrategies(flowsList) {
+  const strategies = ['aggressive', 'aimd', 'adaptive', 'conservative'];
+  const profiles = ['aggressive', 'adaptive', 'conservative', 'video', 'gaming', 'fileTransfer', 'burstTraffic'];
+  
+  return flowsList.map(f => {
+    const strategy = strategies[Math.floor(Math.random() * strategies.length)];
+    let trafficProfile = profiles[Math.floor(Math.random() * profiles.length)];
+    
+    if (strategy === 'aggressive') {
+      trafficProfile = ['aggressive', 'burstTraffic', 'fileTransfer'][Math.floor(Math.random() * 3)];
+    } else if (strategy === 'conservative') {
+      trafficProfile = ['conservative', 'gaming'][Math.floor(Math.random() * 2)];
+    } else {
+      trafficProfile = ['adaptive', 'video', 'gaming'][Math.floor(Math.random() * 3)];
+    }
+
+    return {
+      ...f,
+      strategy,
+      trafficProfile,
+      rate: 40,
+      baseRate: 40,
+    };
+  });
+}
+
+const INITIAL_TOPOLOGY = {
+  ...DEFAULT_TOPOLOGY,
+  flows: randomizeFlowStrategies(DEFAULT_TOPOLOGY.flows),
 };
 
 export default function App() {
   const [tab, setTab] = useState('topology');
 
+  // ── A2C Agent Ref (Shared between Debug and Evaluation tabs) ──
+  const agentRef = useRef(null);
+  if (!agentRef.current) {
+    agentRef.current = new A2CAgent();
+  }
+
+  // ── DDQN Agent Ref (Shared between Debug and Evaluation tabs) ──
+  const ddqnAgentRef = useRef(null);
+  if (!ddqnAgentRef.current) {
+    ddqnAgentRef.current = new DDQNAgent();
+  }
+
+  // ── A3C Agent Ref (Shared between Debug and Evaluation tabs) ──
+  const a3cAgentRef = useRef(null);
+  if (!a3cAgentRef.current) {
+    a3cAgentRef.current = new A3CAgent({ topology: INITIAL_TOPOLOGY });
+  }
+
   // ── Topology state (source of truth from TopologyBuilder) ──
-  const [topology, setTopology] = useState(DEFAULT_TOPOLOGY);
+  const [topology, setTopology] = useState(INITIAL_TOPOLOGY);
+
+  // Synchronize A3C workers topology
+  useEffect(() => {
+    if (a3cAgentRef.current) {
+      a3cAgentRef.current.initWorkers(topology);
+    }
+  }, [topology]);
 
   // ── Simulation state ──────────────────────────────────────
   const [round, setRound] = useState(0);
@@ -64,29 +127,54 @@ export default function App() {
   const [equilibriumRound, setEquilibriumRound] = useState(null);
 
   const [flows, setFlows] = useState(() => {
-    const init = initSimulation(DEFAULT_TOPOLOGY.flows);
+    const init = initSimulation(INITIAL_TOPOLOGY.flows, INITIAL_TOPOLOGY.nodes, INITIAL_TOPOLOGY.links);
     return init.flows;
   });
   const [payoffHistories, setPayoffHistories] = useState(() => {
-    const init = initSimulation(DEFAULT_TOPOLOGY.flows);
+    const init = initSimulation(INITIAL_TOPOLOGY.flows, INITIAL_TOPOLOGY.nodes, INITIAL_TOPOLOGY.links);
     return init.payoffHistories;
   });
   const [linkUtil, setLinkUtil] = useState({});
   const [linkLoss, setLinkLoss] = useState({});
   const [linkDemand, setLinkDemand] = useState({});
+  const [simLinks, setSimLinks] = useState(() => INITIAL_TOPOLOGY.links.map(l => ({
+    ...l,
+    stats: { capacity: l.capacity, currentLoad: 0, utilization: 0, congested: false }
+  })));
+  const [networkStats, setNetworkStats] = useState({ congestedLinks: 0, maxUtilization: 0, averageUtilization: 0 });
   const [fairness, setFairness] = useState(0);
   const [totalThroughput, setTotalThroughput] = useState(0);
   const [congestedNodes, setCongestedNodes] = useState(new Set());
   const [flowsWithPayoff, setFlowsWithPayoff] = useState([]);
   const [historyChart, setHistoryChart] = useState([]);
+  const [equilibriumHistory, setEquilibriumHistory] = useState([]);
+  const [equilibriumStats, setEquilibriumStats] = useState({
+    lastUpdateRound: 0,
+    averagePayoff: 0,
+    averageFairness: 0,
+    stabilityScore: 0,
+    volatilityIndex: 0,
+    confidence: 0,
+    equilibrium: false
+  });
+  const [nodeQueueStats, setNodeQueueStats] = useState(() => {
+    const init = initSimulation(DEFAULT_TOPOLOGY.flows, DEFAULT_TOPOLOGY.nodes, DEFAULT_TOPOLOGY.links);
+    return init.nodeQueueStats || {};
+  });
+  const [networkQueueStats, setNetworkQueueStats] = useState({
+    totalQueuedPackets: 0, averageQueueUtil: 0, maxQueueSize: 0, totalDroppedPackets: 0
+  });
+  const [networkLatencyStats, setNetworkLatencyStats] = useState({
+    averageLatency: 0, maxLatency: 0, minLatency: 0
+  });
 
   const timerRef = useRef(null);
-  const stateRef = useRef({ flows, payoffHistories, alpha, beta, topology });
+  const stateRef = useRef({ flows, payoffHistories, alpha, beta, topology, equilibriumHistory, equilibriumStats, nodeQueueStats });
   const equilibriumRef = useRef(false);
 
   useEffect(() => {
-    stateRef.current = { flows, payoffHistories, alpha, beta, topology };
-  }, [flows, payoffHistories, alpha, beta, topology]);
+    stateRef.current = { flows, payoffHistories, alpha, beta, topology, equilibriumHistory, equilibriumStats, nodeQueueStats };
+  }, [flows, payoffHistories, alpha, beta, topology, equilibriumHistory, equilibriumStats, nodeQueueStats]);
 
   // When topology flows change (from builder), reinit simulation
   const prevFlowIdsRef = useRef(topology.flows.map(f => f.id).join(','));
@@ -113,6 +201,9 @@ export default function App() {
       alpha: a,
       beta: b,
       topology: topo,
+      equilibriumHistory: eqHist,
+      equilibriumStats: eqStats,
+      nodeQueueStats: curQueueStats,
     } = stateRef.current;
 
     // Safety fallback
@@ -123,10 +214,15 @@ export default function App() {
       curHistories,
       links,
       a,
-      b
+      b,
+      eqHist,
+      eqStats,
+      curQueueStats
     );
 
     setFlows(result.flows);
+    setSimLinks(result.links);
+    setNetworkStats(result.networkStats);
     setPayoffHistories(result.newHistories);
     setLinkUtil(result.linkUtil);
     setLinkLoss(result.linkLoss);
@@ -137,6 +233,11 @@ export default function App() {
     setEquilibrium(isEquilibriumLatched);
     setCongestedNodes(result.congestedNodes);
     setFlowsWithPayoff(result.flowsWithPayoff);
+    setEquilibriumHistory(result.equilibriumHistory);
+    setEquilibriumStats(result.equilibriumStats);
+    setNodeQueueStats(result.nodeQueueStats);
+    setNetworkQueueStats(result.networkQueueStats);
+    setNetworkLatencyStats(result.networkLatencyStats || { averageLatency: 0, maxLatency: 0, minLatency: 0 });
 
     setRound(r => {
       const newRound = r + 1;
@@ -181,12 +282,30 @@ export default function App() {
     setLinkUtil({});
     setLinkLoss({});
     setLinkDemand({});
+    setSimLinks(topology.links.map(l => ({
+      ...l,
+      stats: { capacity: l.capacity, currentLoad: 0, utilization: 0, congested: false }
+    })));
+    setNetworkStats({ congestedLinks: 0, maxUtilization: 0, averageUtilization: 0 });
     setCongestedNodes(new Set());
     setFlowsWithPayoff([]);
     setHistoryChart([]);
-    const init = initSimulation(flowDefs || topology.flows);
+    setEquilibriumHistory([]);
+    setEquilibriumStats({
+      lastUpdateRound: 0,
+      averagePayoff: 0,
+      averageFairness: 0,
+      stabilityScore: 0,
+      volatilityIndex: 0,
+      confidence: 0,
+      equilibrium: false
+    });
+    const init = initSimulation(flowDefs || topology.flows, topology.nodes, topology.links);
     setFlows(init.flows);
     setPayoffHistories(init.payoffHistories);
+    setNodeQueueStats(init.nodeQueueStats || {});
+    setNetworkQueueStats({ totalQueuedPackets: 0, averageQueueUtil: 0, maxQueueSize: 0, totalDroppedPackets: 0 });
+    setNetworkLatencyStats({ averageLatency: 0, maxLatency: 0, minLatency: 0 });
   }
 
   function handlePlayPause() { setRunning(r => !r); }
@@ -195,19 +314,12 @@ export default function App() {
 
   function handleUpdateFlows(newFlows) {
     equilibriumRef.current = false;
-    const init = initSimulation(newFlows);
+    const init = initSimulation(newFlows, topology.nodes, topology.links);
     setFlows(init.flows);
     setPayoffHistories(init.payoffHistories);
-    setRound(0);
-    setEquilibrium(false);
-    setEquilibriumRound(null);
-    setFairness(0);
-    setTotalThroughput(0);
-    setLinkUtil({});
-    setLinkLoss({});
-    setCongestedNodes(new Set());
-    setFlowsWithPayoff([]);
-    setHistoryChart([]);
+    setNodeQueueStats(init.nodeQueueStats || {});
+    setNetworkQueueStats({ totalQueuedPackets: 0, averageQueueUtil: 0, maxQueueSize: 0, totalDroppedPackets: 0 });
+    setNetworkLatencyStats({ averageLatency: 0, maxLatency: 0, minLatency: 0 });
     // Also sync back to topology
     setTopology(prev => ({ ...prev, flows: newFlows }));
   }
@@ -224,6 +336,8 @@ export default function App() {
 
   const sharedState = {
     flows,
+    links: simLinks,
+    networkStats,
     linkUtil,
     linkLoss,
     linkDemand,
@@ -235,6 +349,11 @@ export default function App() {
     congestedNodes,
     flowsWithPayoff,
     historyChart: historyChart.slice(-40),
+    equilibriumStats,
+    equilibriumHistory,
+    nodeQueueStats,
+    networkQueueStats,
+    networkLatencyStats,
   };
 
   const isSimTab = tab !== 'topology';
@@ -330,7 +449,7 @@ export default function App() {
           <Dashboard
             state={sharedState}
             topology={topology}
-            links={topology.links}
+            links={simLinks}
           />)}
 
         {tab === 'analytics' && (
@@ -360,6 +479,24 @@ export default function App() {
             links={topology.links}
             alpha={alpha}
             beta={beta}
+          />
+        )}
+
+        {tab === 'rl_debug' && (
+          <RLDebugTab
+            topology={topology}
+            a2cAgent={agentRef}
+            ddqnAgent={ddqnAgentRef}
+            a3cAgent={a3cAgentRef}
+          />
+        )}
+
+        {tab === 'rl_eval' && (
+          <RLEvaluationTab
+            topology={topology}
+            a2cAgent={agentRef}
+            ddqnAgent={ddqnAgentRef}
+            a3cAgent={a3cAgentRef}
           />
         )}
       </main>

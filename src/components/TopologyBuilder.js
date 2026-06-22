@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { TRAFFIC_PROFILES } from '../simulation/engine';
 
 const FLOW_COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
 
@@ -40,9 +41,9 @@ const DEFAULT_LINKS = [
 ];
 
 const DEFAULT_FLOWS_INIT = [
-  { id: 'F1', path: ['A', 'B', 'D', 'E', 'F', 'G'], strategy: 'aggressive', rate: 40, color: '#ef4444' },
-  { id: 'F2', path: ['A', 'C', 'D', 'E', 'F', 'H'], strategy: 'adaptive', rate: 40, color: '#3b82f6' },
-  { id: 'F3', path: ['B', 'D', 'E', 'F'], strategy: 'conservative', rate: 40, color: '#22c55e' },
+  { id: 'F1', path: ['A', 'B', 'D', 'E', 'F', 'G'], strategy: 'aggressive', trafficProfile: 'aggressive', rate: 40, color: '#ef4444' },
+  { id: 'F2', path: ['A', 'C', 'D', 'E', 'F', 'H'], strategy: 'adaptive', trafficProfile: 'adaptive', rate: 40, color: '#3b82f6' },
+  { id: 'F3', path: ['B', 'D', 'E', 'F'], strategy: 'conservative', trafficProfile: 'conservative', rate: 40, color: '#22c55e' },
 ];
 
 /* ── Shared modal overlay styles ─────────────────────────────────── */
@@ -159,6 +160,7 @@ export default function TopologyBuilder({ topology, onTopologyChange, onGoToDash
   const [draftPath, setDraftPath] = useState([]);
   const [editFlowIdx, setEditFlowIdx] = useState(null);
   const [flowStrategy, setFlowStrategy] = useState('adaptive');
+  const [flowProfile, setFlowProfile] = useState('conservative');
   const [flowRate, setFlowRate] = useState('40');
   const [flowPanel, setFlowPanel] = useState(false);
 
@@ -387,6 +389,7 @@ export default function TopologyBuilder({ topology, onTopologyChange, onGoToDash
     setFlowPanel(true);
     setEditFlowIdx(null);
     setFlowStrategy('adaptive');
+    setFlowProfile('conservative');
     setFlowRate('40');
   }
 
@@ -402,8 +405,13 @@ export default function TopologyBuilder({ topology, onTopologyChange, onGoToDash
     const id = editFlowIdx != null ? flows[editFlowIdx].id : `F${flows.length + 1}`;
     const color = editFlowIdx != null ? flows[editFlowIdx].color : FLOW_COLORS[flows.length % FLOW_COLORS.length];
     const newFlow = {
-      id, path: draftPath, strategy: flowStrategy,
-      rate: parseFloat(flowRate) || 40, color,
+      id,
+      path: draftPath,
+      strategy: flowStrategy,
+      trafficProfile: flowProfile,
+      rate: parseFloat(flowRate) || 40,
+      baseRate: parseFloat(flowRate) || 40,
+      color,
       throughput: 0, delay: 0, lossRate: 0, payoff: 0,
     };
     if (editFlowIdx != null) {
@@ -419,7 +427,8 @@ export default function TopologyBuilder({ topology, onTopologyChange, onGoToDash
     setEditFlowIdx(idx);
     setDraftPath([...f.path]);
     setFlowStrategy(f.strategy);
-    setFlowRate(String(f.rate));
+    setFlowProfile(f.trafficProfile || 'conservative');
+    setFlowRate(String(f.baseRate || f.rate));
     setDraftFlow(true);
     setFlowPanel(true);
     setMode('select');
@@ -706,9 +715,12 @@ export default function TopologyBuilder({ topology, onTopologyChange, onGoToDash
                             <div style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {f.path.join(' → ')}
                             </div>
-                            <div style={{ fontSize: 11, display: 'flex', gap: 6, marginTop: 2 }}>
+                            <div style={{ fontSize: 11, display: 'flex', gap: 6, marginTop: 2, flexWrap: 'wrap', alignItems: 'center' }}>
                               <span style={{ color: stratColor, fontWeight: 600 }}>{f.strategy}</span>
-                              <span style={{ color: '#94a3b8' }}>· {f.rate} Mbps</span>
+                              <span style={{ color: '#475569', background: '#e2e8f0', padding: '1px 5px', borderRadius: 4, fontSize: '9px', fontWeight: 600 }}>
+                                {TRAFFIC_PROFILES[f.trafficProfile]?.label || f.trafficProfile || 'Conservative'}
+                              </span>
+                              <span style={{ color: '#94a3b8' }}>· {f.baseRate || f.rate} Mbps</span>
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
@@ -751,7 +763,39 @@ export default function TopologyBuilder({ topology, onTopologyChange, onGoToDash
                     <StrategySelector value={flowStrategy} onChange={setFlowStrategy} />
                   </div>
 
-                  <FieldRow label="Target Rate (Mbps)">
+                  <div>
+                    <span style={labelStyle}>Traffic Profile</span>
+                    <select
+                      value={flowProfile}
+                      onChange={e => {
+                        const selectedProfile = e.target.value;
+                        setFlowProfile(selectedProfile);
+                        // Suggest default base rate
+                        const defaultBase = TRAFFIC_PROFILES[selectedProfile]?.baseRateDefault || 40;
+                        setFlowRate(String(defaultBase));
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        borderRadius: 7,
+                        border: '1.5px solid #cbd5e1',
+                        fontFamily: 'inherit',
+                        fontSize: 13,
+                        outline: 'none',
+                        marginTop: 4,
+                        boxSizing: 'border-box',
+                        background: '#fff'
+                      }}
+                    >
+                      {Object.entries(TRAFFIC_PROFILES).map(([key, p]) => (
+                        <option key={key} value={key}>
+                          {p.label} (Default: {p.baseRateDefault} Mbps)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <FieldRow label="Base Rate (Mbps)">
                     <input type="number" value={flowRate}
                       onChange={e => setFlowRate(e.target.value)}
                       min="1" max="10000"
