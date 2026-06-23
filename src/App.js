@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 import TopologyBuilder from './components/TopologyBuilder';
+import ImportTab from './components/ImportTab';
 import Dashboard from './components/Dashboard';
 import FlowsTab from './components/FlowsTab';
 import PayoffTab from './components/PayoffTab';
@@ -12,6 +13,7 @@ const SPEED_MAP = { '0.5x': 2000, '1x': 1000, '2x': 500, '5x': 200, '10x': 100 }
 
 const TABS = [
   { id: 'topology', label: '🗺 Topology' },
+  { id: 'import', label: '📥 Import Data' },
   { id: 'dashboard', label: '📊 Dashboard' },
   { id: 'analytics', label: '🧮 Analytics' },
   { id: 'flows', label: '🔀 Flows' },
@@ -222,6 +224,102 @@ export default function App() {
     setTab('dashboard');
   }
 
+  const handleImportSuccess = (payload) => {
+    setTopology(payload.topology);
+
+    const linkDemand = {};
+    const linkUtil = {};
+    const linkLoss = {};
+
+    const activeLinks = payload.topology.links;
+    activeLinks.forEach(l => {
+      linkDemand[`${l.from}-${l.to}`] = 0;
+    });
+
+    payload.flows.forEach(flow => {
+      for (let i = 0; i < flow.path.length - 1; i++) {
+        const key = `${flow.path[i]}-${flow.path[i + 1]}`;
+        if (linkDemand[key] !== undefined) {
+          linkDemand[key] += flow.throughput;
+        }
+      }
+    });
+
+    activeLinks.forEach(l => {
+      const key = `${l.from}-${l.to}`;
+      const demand = linkDemand[key] || 0;
+      linkUtil[key] = Math.min(demand / l.capacity, 1.0);
+      linkLoss[key] = demand > l.capacity ? (demand - l.capacity) / demand : 0;
+    });
+
+    const x = payload.flows.map(f => f.throughput);
+    const n = x.length;
+    let fairness = 0;
+    if (n > 0) {
+      const s = x.reduce((a, b) => a + b, 0);
+      const s2 = x.reduce((a, b) => a + b * b, 0);
+      fairness = s2 === 0 ? 1 : (s * s) / (n * s2);
+    }
+
+    const totalThroughput = payload.flows.reduce((s, f) => s + f.throughput, 0);
+
+    const congestedNodes = new Set();
+    activeLinks.forEach(l => {
+      const key = `${l.from}-${l.to}`;
+      if ((linkUtil[key] || 0) > 0.85) {
+        congestedNodes.add(l.from);
+        congestedNodes.add(l.to);
+      }
+    });
+
+    const flowsWithPayoff = payload.flows.map(flow => {
+      let maxLoss = 0;
+      let maxUtil = 0;
+      for (let i = 0; i < flow.path.length - 1; i++) {
+        const key = `${flow.path[i]}-${flow.path[i + 1]}`;
+        maxLoss = Math.max(maxLoss, linkLoss[key] || 0);
+        maxUtil = Math.max(maxUtil, linkUtil[key] || 0);
+      }
+      const payoff = flow.throughput - alpha * flow.delay - beta * (flow.lossRate * 100);
+      return {
+        ...flow,
+        maxUtil,
+        payoff
+      };
+    });
+
+    const initialRoundPoint = {
+      round: 1,
+      throughput: parseFloat(totalThroughput.toFixed(1)),
+      fairness: parseFloat(fairness.toFixed(3)),
+    };
+    flowsWithPayoff.forEach(f => {
+      initialRoundPoint[`rate_${f.id}`] = parseFloat((f.rate || 0).toFixed(2));
+      initialRoundPoint[`payoff_${f.id}`] = parseFloat((f.payoff || 0).toFixed(2));
+      initialRoundPoint[`delay_${f.id}`] = parseFloat((f.delay || 0).toFixed(2));
+      initialRoundPoint[`loss_${f.id}`] = parseFloat(((f.lossRate || 0) * 100).toFixed(2));
+      initialRoundPoint[`throughput_${f.id}`] = parseFloat((f.throughput || 0).toFixed(2));
+    });
+
+    setRound(1);
+    setRunning(false);
+    equilibriumRef.current = false;
+    setEquilibrium(false);
+    setEquilibriumRound(null);
+    setFairness(fairness);
+    setTotalThroughput(totalThroughput);
+    setLinkUtil(linkUtil);
+    setLinkLoss(linkLoss);
+    setLinkDemand(linkDemand);
+    setCongestedNodes(congestedNodes);
+    setFlowsWithPayoff(flowsWithPayoff);
+    setHistoryChart([initialRoundPoint]);
+    setFlows(payload.flows);
+    setPayoffHistories(flowsWithPayoff.map(f => [f.payoff]));
+
+    setTab('dashboard');
+  };
+
   const sharedState = {
     flows,
     linkUtil,
@@ -237,14 +335,14 @@ export default function App() {
     historyChart: historyChart.slice(-40),
   };
 
-  const isSimTab = tab !== 'topology';
+  const isSimTab = tab !== 'topology' && tab !== 'import';
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <div className="logo">GT<span>ACCS</span></div>
         <div className="header-pill">Game-Theoretic Adaptive Congestion Control</div>
-        {tab !== 'topology' && (
+        {tab !== 'topology' && tab !== 'import' && (
           <div className="header-pill" style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
             {flows.map(f => (
               <span key={f.id} style={{
@@ -324,6 +422,10 @@ export default function App() {
             onTopologyChange={handleTopologyChange}
             onGoToDashboard={handleGoToDashboard}
           />
+        )}
+
+        {tab === 'import' && (
+          <ImportTab onImportSuccess={handleImportSuccess} />
         )}
 
         {tab === 'dashboard' && (

@@ -465,3 +465,32 @@ input  { font-family: var(--f-ui); }
   .tab-label { display: none; }
   .bm-bar, .bm-label, .bm-pct { display: none; }
 }
+
+/* ── Import Network Data Tab ────────────────────────────── */
+.import-container {
+  padding: 10px;
+}
+.drag-drop-zone {
+  border: 2.5px dashed var(--border2);
+  border-radius: var(--r-lg);
+  background: var(--surface2);
+  padding: 40px;
+  text-align: center;
+  transition: all 0.2s ease-in-out;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+.drag-drop-zone.active {
+  border-color: var(--accent);
+  background: var(--accent-lt);
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+}
+.alert-box {
+  font-family: var(--f-ui);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
